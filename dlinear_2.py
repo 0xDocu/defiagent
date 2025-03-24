@@ -1,4 +1,10 @@
-# DLinear model 샘플 구현
+# DLinear model
+# SUIUSDT 데이터로 SUI-USDT pool의 3days average APY 예측
+
+# target data: 'dataset/data_1st.csv'
+
+# price만 정규화, 결과인 apys는 정규화 X
+# training set 정규화 후, 해당 set의 mean, std를 사용하여 val/test set 정규화
 
 import pandas as pd
 import numpy as np
@@ -7,28 +13,7 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 import sys
 
-### Price -> APY 예측
-
-PRICE_CSV = 'data/normalization/norm_hist_price.csv'
-APY_CSV    = 'data/normalization/norm_apy_tvl.csv'
-
-### 역정규화 정보
-APY_MEAN = 144.4370
-APY_STD = 115.9434
-
-def load_and_merge():
-    price_df = pd.read_csv(PRICE_CSV)
-    apy_df   = pd.read_csv(APY_CSV)
-    
-    price_df.sort_values('date', inplace=True)
-    apy_df.sort_values('date', inplace=True)
-
-    print("load_and_merge() - price_df.shape =", price_df.shape)
-    print("load_and_merge() - apy_df.shape =", apy_df.shape)
-    
-    df = pd.merge(price_df, apy_df, on='date', how='inner')
-   
-    return df
+DATA_CSV = 'data/dataset/data_1st.csv'
 
 def create_window_multistep(df, price_col, apy_col, window_size, horizon):
 
@@ -61,7 +46,7 @@ def build_dlinear_multistep(window_size, horizon):
     x = keras.layers.Reshape((window_size, 1))(inputs)
     
     # 추세
-    trend_seq = keras.layers.AveragePooling1D(pool_size=25, strides=1, padding='same')(x)
+    trend_seq = keras.layers.AveragePooling1D(pool_size=5, strides=1, padding='same')(x)
 
     # 잔차
     resid_seq = x - trend_seq
@@ -71,21 +56,21 @@ def build_dlinear_multistep(window_size, horizon):
     resid_flat = keras.layers.Flatten()(resid_seq)   # (batch, window_size)
     
     # Dense
-    trend_pred = keras.layers.Dense(horizon)(trend_flat)    # shape=(batch,7)
-    resid_pred = keras.layers.Dense(horizon)(resid_flat)    # shape=(batch,7)
+    trend_pred = keras.layers.Dense(horizon)(trend_flat)
+    resid_pred = keras.layers.Dense(horizon)(resid_flat)
     
-    y_pred = trend_pred + resid_pred  # shape=(batch,7)
+    y_pred = trend_pred + resid_pred
     
     model = keras.Model(inputs, y_pred)
     return model
 
 def main():
-    merged_df = load_and_merge()
-    merged_df.sort_values('date', inplace=True, ignore_index=True)
-    print("merged_df.shape =", merged_df.shape)
+    df = pd.read_csv(DATA_CSV)
+    df.sort_values('date', inplace=True, ignore_index=True)
+    print("df.shape =", df.shape)
     
-    #X, Y, date_label = create_window_multistep(merged_df, 'norm_price', 'merged_apy_scaled', 30, 7)
-    X, Y, date_label = create_window_multistep(merged_df, 'norm_price', 'merged_apy_scaled', 30, 1)
+    # csv의 apy값이 이미 3일 평균값으로 전치리된 상황이므로 horizon=1
+    X, Y, date_label = create_window_multistep(df, 'price', 'apy', 30, 1)
     
     # train 70% / val 15% / test 15%
     N = len(X)
@@ -95,11 +80,34 @@ def main():
     X_train, Y_train = X[:train_end], Y[:train_end]
     X_val,   Y_val   = X[train_end:val_end], Y[train_end:val_end]
     X_test,  Y_test  = X[val_end:], Y[val_end:]
+
+    print("Train size:", X_train.shape, Y_train.shape)
+    print("Val size:", X_val.shape, Y_val.shape)
+    print("Test size:", X_test.shape, Y_test.shape)
+
+    train_flat = X_train.reshape(-1, X_train.shape[-1])
+    _mean = train_flat.mean(axis=0)
+    _std = train_flat.std(axis=0)
+
+    def apply_normalize(x3d, _mean, _std):
+        # x3d.shape = (batch, 30, feature_dim)
+        x2d = x3d.reshape(-1, x3d.shape[-1])
+        x2d = (x2d - _mean) / _std
+        return x2d.reshape(x3d.shape)
+
+    X_train = apply_normalize(X_train, _mean, _std)
+    X_val   = apply_normalize(X_val,   _mean, _std)
+    X_test  = apply_normalize(X_test,  _mean, _std)
+
+    print("Check if X_test has NaNs: ", np.isnan(X_test).any())
+    print("Check if X_test has Infs: ", np.isinf(X_test).any())
+    print("Check if Y_test has NaNs: ", np.isnan(Y_test).any())
+    print("Check if Y_test has Infs: ", np.isinf(Y_test).any())
     
     # building model
     model = build_dlinear_multistep(30, 1)
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
         loss='mse', 
         metrics=['mae']
     )
@@ -128,21 +136,12 @@ def main():
     
     # predicting
     print("Generating predictions...")
-    y_pred_scaled = model.predict(test_ds)  # shape=(len(X_test),7)
-    print("y_pred shape =", y_pred_scaled.shape)
+    y_pred = model.predict(test_ds)
+    print("y_pred shape =", y_pred.shape)
 
-    # 역정규화하여 결과 분석
-    y_test_scaled = np.concatenate([y for x, y in test_ds], axis=0)
-    print("y_test_scaled shape =", y_test_scaled.shape)
+    y_test = np.concatenate([y for x, y in test_ds], axis=0)
+    print("y_test_scaled shape =", y_test.shape)
     
-    y_pred = y_pred_scaled * APY_STD + APY_MEAN
-    y_test = y_test_scaled * APY_STD + APY_MEAN
-
-    # MSE, MAE 재계산
-    mse = np.mean((y_pred - y_test)**2)
-    mae = np.mean(np.abs(y_pred - y_test))
-    print(f"[Test - original scale] MSE={mse:.4f}, MAE={mae:.4f}")
-
     plt.figure(figsize=(10,4))
 
     # 손실(loss) 그래프
