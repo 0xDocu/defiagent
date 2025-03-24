@@ -1,12 +1,15 @@
 import pandas as pd
 
-INPUT_CSV = 'raw_suiusdc/merged_cetus_turbos.csv'
+INPUT_CSV = 'raw_data/merged_cetus_turbos.csv'
 OUTPUT_CSV = 'normalization/norm_apy_tvl.csv'
 
 def main():
     
     df = pd.read_csv(INPUT_CSV)
     df_subset = df[['date','merged_apy','merged_tvl']].copy()
+
+    df_subset['date'] = df_subset['date'].dt.strftime('%Y-%m-%d')
+    
     
     # 3) z-score 정규화
     _mean_apy = df_subset['merged_apy'].mean()

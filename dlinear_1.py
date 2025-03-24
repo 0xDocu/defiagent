@@ -10,6 +10,9 @@ import sys
 PRICE_CSV = 'data/normalization/norm_hist_price.csv'
 APY_CSV    = 'data/normalization/norm_apy_tvl.csv'
 
+### 역정규화 정보
+APY_MEAN = 144.4370
+APY_STD = 115.9434
 
 def load_and_merge():
     price_df = pd.read_csv(PRICE_CSV)
@@ -17,6 +20,9 @@ def load_and_merge():
     
     price_df.sort_values('date', inplace=True)
     apy_df.sort_values('date', inplace=True)
+
+    print("load_and_merge() - price_df.shape =", price_df.shape)
+    print("load_and_merge() - apy_df.shape =", apy_df.shape)
     
     df = pd.merge(price_df, apy_df, on='date', how='inner')
    
@@ -74,8 +80,10 @@ def build_dlinear_multistep(window_size, horizon):
 def main():
     merged_df = load_and_merge()
     merged_df.sort_values('date', inplace=True, ignore_index=True)
+    print("merged_df.shape =", merged_df.shape)
     
-    X, Y, date_label = create_window_multistep(merged_df, 'norm_price', 'merged_apy_scaled', 30, 7)
+    #X, Y, date_label = create_window_multistep(merged_df, 'norm_price', 'merged_apy_scaled', 30, 7)
+    X, Y, date_label = create_window_multistep(merged_df, 'norm_price', 'merged_apy_scaled', 30, 1)
     
     # train 70% / val 15% / test 15%
     N = len(X)
@@ -87,7 +95,7 @@ def main():
     X_test,  Y_test  = X[val_end:], Y[val_end:]
     
     # building model
-    model = build_dlinear_multistep(30, 7)
+    model = build_dlinear_multistep(30, 1)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
         loss='mse', 
@@ -97,25 +105,42 @@ def main():
     # tf.data
     train_ds = tf.data.Dataset.from_tensor_slices((X_train, Y_train)).batch(32).prefetch(1)
     val_ds   = tf.data.Dataset.from_tensor_slices((X_val,   Y_val)).batch(32).prefetch(1)
+    test_ds = tf.data.Dataset.from_tensor_slices((X_test, Y_test)).batch(32).prefetch(1)
     
-    # 학습
+    # check data
+    print("X.shape =", X.shape)  # (전체 샘플 수, 30) ?
+    print("X_train.shape =", X_train.shape)
+
+    # model fitting
     callbacks = [
         tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+        #tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=0, restore_best_weights=True)
     ]
     print("Starting model training...")
     history = model.fit(train_ds, epochs=200, validation_data=val_ds, callbacks=callbacks, verbose=1)
     
-    # 평가
+    # evaluating
     print("Evaluating on test set...")
-    test_ds = tf.data.Dataset.from_tensor_slices((X_test, Y_test)).batch(32)
-    loss, mae = model.evaluate(test_ds)
-    print(f"[Test] MSE={loss:.4f}, MAE={mae:.4f}")
+    loss, mae_scaled = model.evaluate(test_ds)
+    print(f"[Test] MSE={loss:.4f}, MAE={mae_scaled:.4f}")
     
-    # 예측
+    # predicting
     print("Generating predictions...")
-    y_pred = model.predict(test_ds)  # shape=(len(X_test),7)
-    print("y_pred shape =", y_pred.shape)
+    y_pred_scaled = model.predict(test_ds)  # shape=(len(X_test),7)
+    print("y_pred shape =", y_pred_scaled.shape)
+
+    # 역정규화하여 결과 분석
+    y_test_scaled = np.concatenate([y for x, y in test_ds], axis=0)
+    print("y_test_scaled shape =", y_test_scaled.shape)
     
+    y_pred = y_pred_scaled * APY_STD + APY_MEAN
+    y_test = y_test_scaled * APY_STD + APY_MEAN
+
+    # MSE, MAE 재계산
+    mse = np.mean((y_pred - y_test)**2)
+    mae = np.mean(np.abs(y_pred - y_test))
+    print(f"[Test - original scale] MSE={mse:.4f}, MAE={mae:.4f}")
+
     plt.figure(figsize=(10,4))
 
     # 손실(loss) 그래프
