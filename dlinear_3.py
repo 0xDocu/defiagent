@@ -21,6 +21,8 @@ import tensorflow as tf
 import matplotlib.pyplot as plt
 
 DATA_CSV = 'data/dataset/data_1st.csv'
+WINDOW_SIZE = 30
+HORIZON = 1
 
 # 전처리 함수, 5일 이평선과 (종가-5일 이평)의 잔차 계산
 def offchain_preprocess(prices_1d):
@@ -75,127 +77,84 @@ def create_window_multistep(df, price_col, apy_col, window_size, horizon):
     
     return X, Y, date_label
 
-def build_dlinear_multistep(window_size, horizon):
-
-    inputs = keras.Input(shape=(window_size,))
-    
-    x = keras.layers.Reshape((window_size, 1))(inputs)
-    
-    # 추세
-    trend_seq = keras.layers.AveragePooling1D(pool_size=5, strides=1, padding='same')(x)
-
-    # 잔차
-    resid_seq = x - trend_seq
-    
-    # flatten
-    trend_flat = keras.layers.Flatten()(trend_seq)   # (batch, window_size)
-    resid_flat = keras.layers.Flatten()(resid_seq)   # (batch, window_size)
-    
-    # Dense
-    trend_pred = keras.layers.Dense(horizon)(trend_flat)
-    resid_pred = keras.layers.Dense(horizon)(resid_flat)
-    
-    y_pred = trend_pred + resid_pred
-    
-    model = keras.Model(inputs, y_pred)
-    return model
-
 def main():
     df = pd.read_csv(DATA_CSV)
     df.sort_values('date', inplace=True, ignore_index=True)
     print("df.shape =", df.shape)
     
     # csv의 apy값이 이미 3일 평균값으로 전치리된 상황이므로 horizon=1
-    X, Y, date_label = create_window_multistep(df, 'price', 'apy', 30, 1)
+    X_raw, Y, date_label = create_window_multistep(df, 'price', 'apy', WINDOW_SIZE, HORIZON)
+    print("Initial X_raw shape =", X_raw.shape)   # (batch, 30)
+    print("Y shape =", Y.shape)                  # (batch, 1)
 
     # X, Y 로 윈도우를 뽑되, AveragePooling + resid는 PYTHON에서 미리 처리
     X2_list = []
-    for x_window in X:  # X.shape=(batch,30)
+    for x_window in X_raw:
         trend_seq, resid_seq = offchain_preprocess(x_window)
         # concate to shape (30*2,)
         merged_2d = np.concatenate([trend_seq, resid_seq], axis=0)
         X2_list.append(merged_2d)
 
     X2 = np.array(X2_list)  # shape=(batch, 60) if window_size=30
-    # 이제 X2를 모델 입력으로 사용
-
-    # 모델 정의 및 학습
-    model = build_light_mlp(input_dim=60)  # window_size*2
-    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
-    model.fit(X2_train, Y_train, ...)
-    # ...
-    model.save("light_model.h5")
+    print("X2 shape =", X2.shape)
     
     # train 70% / val 15% / test 15%
-    N = len(X)
+    N = len(X2)
     train_end = int(N*0.7)
     val_end   = int(N*0.85)
     
-    X_train, Y_train = X[:train_end], Y[:train_end]
-    X_val,   Y_val   = X[train_end:val_end], Y[train_end:val_end]
-    X_test,  Y_test  = X[val_end:], Y[val_end:]
+    X2_train, Y_train = X2[:train_end], Y[:train_end]
+    X2_val,   Y_val   = X2[train_end:val_end], Y[train_end:val_end]
+    X2_test,  Y_test  = X2[val_end:], Y[val_end:]
 
-    print("Train size:", X_train.shape, Y_train.shape)
-    print("Val size:", X_val.shape, Y_val.shape)
-    print("Test size:", X_test.shape, Y_test.shape)
+    print("Train size:", X2_train.shape, Y_train.shape)
+    print("Val size:", X2_val.shape, Y_val.shape)
+    print("Test size:", X2_test.shape, Y_test.shape)
 
-    train_flat = X_train.reshape(-1, X_train.shape[-1])
-    _mean = train_flat.mean(axis=0)
-    _std = train_flat.std(axis=0)
+    _mean = X2_train.mean(axis=0)
+    _std = X2_train.std(axis=0)
 
-    def apply_normalize(x3d, _mean, _std):
-        # x3d.shape = (batch, 30, feature_dim)
-        x2d = x3d.reshape(-1, x3d.shape[-1])
-        x2d = (x2d - _mean) / _std
-        return x2d.reshape(x3d.shape)
+    def normalize(x, m, s):
+        return (x - m) / s
 
-    X_train = apply_normalize(X_train, _mean, _std)
-    X_val   = apply_normalize(X_val,   _mean, _std)
-    X_test  = apply_normalize(X_test,  _mean, _std)
-
-    print("Check if X_test has NaNs: ", np.isnan(X_test).any())
-    print("Check if X_test has Infs: ", np.isinf(X_test).any())
-    print("Check if Y_test has NaNs: ", np.isnan(Y_test).any())
-    print("Check if Y_test has Infs: ", np.isinf(Y_test).any())
+    X2_train_norm = normalize(X2_train, _mean, _std)
+    X2_val_norm   = normalize(X2_val,   _mean, _std)
+    X2_test_norm  = normalize(X2_test,  _mean, _std)
     
     # building model
-    model = build_dlinear_multistep(30, 1)
+    model = build_light_mlp(WINDOW_SIZE*2)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
-        loss='mse', 
-        metrics=['mae']
+        loss = tf.keras.losses.MeanSquaredError(), 
+        metrics=[tf.keras.metrics.MeanAbsoluteError()]
     )
     
     # tf.data
-    train_ds = tf.data.Dataset.from_tensor_slices((X_train, Y_train)).batch(32).prefetch(1)
-    val_ds   = tf.data.Dataset.from_tensor_slices((X_val,   Y_val)).batch(32).prefetch(1)
-    test_ds = tf.data.Dataset.from_tensor_slices((X_test, Y_test)).batch(32).prefetch(1)
-    
-    # check data
-    print("X.shape =", X.shape)  # (전체 샘플 수, 30) ?
-    print("X_train.shape =", X_train.shape)
+    train_ds = tf.data.Dataset.from_tensor_slices((X2_train_norm, Y_train)).batch(32).prefetch(1)
+    val_ds   = tf.data.Dataset.from_tensor_slices((X2_val_norm,   Y_val)).batch(32).prefetch(1)
 
+    print("== Summary of Simple Model ==")
+    model.summary()
+    
     # model fitting
     callbacks = [
         tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-        #tf.keras.callbacks.EarlyStopping(monitor='val_loss', mode='min', patience=0, restore_best_weights=True)
     ]
+
     print("Starting model training...")
     history = model.fit(train_ds, epochs=200, validation_data=val_ds, callbacks=callbacks, verbose=1)
     
     # evaluating
     print("Evaluating on test set...")
-    loss, mae_scaled = model.evaluate(test_ds)
-    print(f"[Test] MSE={loss:.4f}, MAE={mae_scaled:.4f}")
+    test_ds = tf.data.Dataset.from_tensor_slices((X2_test_norm, Y_test)).batch(32).prefetch(1)
+    loss, mae = model.evaluate(test_ds, verbose=0)
+    print(f"[Test] MSE={loss:.4f}, MAE={mae:.4f}")
     
     # predicting
     print("Generating predictions...")
     y_pred = model.predict(test_ds)
     print("y_pred shape =", y_pred.shape)
 
-    y_test = np.concatenate([y for x, y in test_ds], axis=0)
-    print("y_test_scaled shape =", y_test.shape)
-    
     plt.figure(figsize=(10,4))
 
     # 손실(loss) 그래프
@@ -208,17 +167,23 @@ def main():
     plt.legend()
     
     # MAE 그래프
-    if 'mae' in history.history:
-        plt.subplot(1,2,2)
-        plt.plot(history.history['mae'], label='train_mae')
-        plt.plot(history.history['val_mae'], label='val_mae')
-        plt.title("MAE Curve")
-        plt.xlabel("Epoch")
-        plt.ylabel("MAE")
-        plt.legend()
+    plt.subplot(1,2,2)
+    plt.plot(history.history['mean_absolute_error'], label='train_mae')
+    plt.plot(history.history['val_mean_absolute_error'], label='val_mae')
+    plt.title("MAE Curve")
+    plt.xlabel("Epoch")
+    plt.ylabel("MAE")
+    plt.legend()
     
     plt.tight_layout()
     plt.show(block=False)  # 그래프 창을 표시하되 block=False로 설정
+
+    # Save the model as .h5
+    print(f"\nSaving model...")
+    model.save("model/dlinear_3_model.keras")
+    print("Model saved successfully tf.")
+    model.save("model/dlinear_3_model.h5")
+    print("Model saved successfully .h5")
 
     print("Close the figure window or press Enter in the console to exit.")
     input("Press Enter to exit...\n") 

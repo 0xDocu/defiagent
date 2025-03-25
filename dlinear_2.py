@@ -167,8 +167,7 @@ def main():
     plt.show(block=False)  # 그래프 창을 표시하되 block=False로 설정
 
     # Save the model as .h5
-    save_dir = "dlinear_2_model_tf"
-    print(f"\nSaving model to '{save_dir}'...")
+    print(f"\nSaving model to...")
     model.save("model/dlinear_2_model.keras")
     print("Model saved successfully tf.")
     model.save("model/dlinear_2_model.h5")
