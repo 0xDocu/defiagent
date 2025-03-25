@@ -51,25 +51,6 @@ def build_light_mlp(input_dim):
     model = keras.Model(inputs, outputs)
     return model
 
-
-# X, Y 로 윈도우를 뽑되, AveragePooling + resid는 PYTHON에서 미리 처리
-X2_list = []
-for x_window in X:  # X.shape=(batch,30)
-    trend_seq, resid_seq = offchain_preprocess(x_window)
-    # concate to shape (30*2,)
-    merged_2d = np.concatenate([trend_seq, resid_seq], axis=0)
-    X2_list.append(merged_2d)
-
-X2 = np.array(X2_list)  # shape=(batch, 60) if window_size=30
-# 이제 X2를 모델 입력으로 사용
-
-# 모델 정의 및 학습
-model = build_light_mlp(input_dim=60)  # window_size*2
-model.compile(optimizer='adam', loss='mse', metrics=['mae'])
-model.fit(X2_train, Y_train, ...)
-# ...
-model.save("light_model.h5")
-
 def create_window_multistep(df, price_col, apy_col, window_size, horizon):
 
     values_price = df[price_col].values
@@ -126,6 +107,24 @@ def main():
     
     # csv의 apy값이 이미 3일 평균값으로 전치리된 상황이므로 horizon=1
     X, Y, date_label = create_window_multistep(df, 'price', 'apy', 30, 1)
+
+    # X, Y 로 윈도우를 뽑되, AveragePooling + resid는 PYTHON에서 미리 처리
+    X2_list = []
+    for x_window in X:  # X.shape=(batch,30)
+        trend_seq, resid_seq = offchain_preprocess(x_window)
+        # concate to shape (30*2,)
+        merged_2d = np.concatenate([trend_seq, resid_seq], axis=0)
+        X2_list.append(merged_2d)
+
+    X2 = np.array(X2_list)  # shape=(batch, 60) if window_size=30
+    # 이제 X2를 모델 입력으로 사용
+
+    # 모델 정의 및 학습
+    model = build_light_mlp(input_dim=60)  # window_size*2
+    model.compile(optimizer='adam', loss='mse', metrics=['mae'])
+    model.fit(X2_train, Y_train, ...)
+    # ...
+    model.save("light_model.h5")
     
     # train 70% / val 15% / test 15%
     N = len(X)

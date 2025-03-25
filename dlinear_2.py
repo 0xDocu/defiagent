@@ -48,8 +48,10 @@ def build_dlinear_multistep(window_size, horizon):
     # 추세
     trend_seq = keras.layers.AveragePooling1D(pool_size=5, strides=1, padding='same')(x)
 
-    # 잔차
-    resid_seq = x - trend_seq
+    # 잔차 / lambda layer로 구현 (모델 복원 문제)
+    resid_seq = keras.layers.Lambda(
+        lambda t: t[0] - t[1]
+    )([x, trend_seq])
     
     # flatten
     trend_flat = keras.layers.Flatten()(trend_seq)   # (batch, window_size)
@@ -59,7 +61,7 @@ def build_dlinear_multistep(window_size, horizon):
     trend_pred = keras.layers.Dense(horizon)(trend_flat)
     resid_pred = keras.layers.Dense(horizon)(resid_flat)
     
-    y_pred = trend_pred + resid_pred
+    y_pred = keras.layers.Add()([trend_pred, resid_pred])
     
     model = keras.Model(inputs, y_pred)
     return model
@@ -89,11 +91,10 @@ def main():
     _mean = train_flat.mean(axis=0)
     _std = train_flat.std(axis=0)
 
-    def apply_normalize(x3d, _mean, _std):
-        # x3d.shape = (batch, 30, feature_dim)
-        x2d = x3d.reshape(-1, x3d.shape[-1])
-        x2d = (x2d - _mean) / _std
-        return x2d.reshape(x3d.shape)
+    def apply_normalize(x2d, _mean, _std):
+        # x2d.shape = (batch, window_size)
+        x2d_norm = (x2d - _mean) / _std
+        return x2d_norm
 
     X_train = apply_normalize(X_train, _mean, _std)
     X_val   = apply_normalize(X_val,   _mean, _std)
@@ -108,8 +109,8 @@ def main():
     model = build_dlinear_multistep(30, 1)
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
-        loss='mse', 
-        metrics=['mae']
+        loss = tf.keras.losses.MeanSquaredError(), 
+        metrics=[tf.keras.metrics.MeanAbsoluteError()]
     )
     
     # tf.data
@@ -139,8 +140,8 @@ def main():
     y_pred = model.predict(test_ds)
     print("y_pred shape =", y_pred.shape)
 
-    y_test = np.concatenate([y for x, y in test_ds], axis=0)
-    print("y_test_scaled shape =", y_test.shape)
+    y_test_concat = np.concatenate([t for _, t in test_ds], axis=0)
+    print("y_test shape =", y_test_concat.shape)
     
     plt.figure(figsize=(10,4))
 
@@ -154,20 +155,30 @@ def main():
     plt.legend()
     
     # MAE 그래프
-    if 'mae' in history.history:
-        plt.subplot(1,2,2)
-        plt.plot(history.history['mae'], label='train_mae')
-        plt.plot(history.history['val_mae'], label='val_mae')
-        plt.title("MAE Curve")
-        plt.xlabel("Epoch")
-        plt.ylabel("MAE")
-        plt.legend()
+    plt.subplot(1,2,2)
+    plt.plot(history.history['mean_absolute_error'], label='train_mae')
+    plt.plot(history.history['val_mean_absolute_error'], label='val_mae')
+    plt.title("MAE Curve")
+    plt.xlabel("Epoch")
+    plt.ylabel("MAE")
+    plt.legend()
     
     plt.tight_layout()
     plt.show(block=False)  # 그래프 창을 표시하되 block=False로 설정
 
+    # Save the model as .h5
+    save_dir = "dlinear_2_model_tf"
+    print(f"\nSaving model to '{save_dir}'...")
+    model.save("model/dlinear_2_model.keras")
+    print("Model saved successfully tf.")
+    model.save("model/dlinear_2_model.h5")
+    print("Model saved successfully .h5")
+
+
     print("Close the figure window or press Enter in the console to exit.")
     input("Press Enter to exit...\n") 
-    
+
+# python -c "import tensorflow as tf; model = tf.keras.models.load_model('model/dlinear_2_model.h5'); model.summary()" 
+
 if __name__ == '__main__':
     main()
