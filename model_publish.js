@@ -27,77 +27,6 @@ if (!PRIVATE_KEY) {
 // Define sleep function first
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Move banner display to the start of execution
-const letters = {
-    "O":[  " ███ ",
-           "█   █",
-           "█   █",
-           "█   █",
-           " ███ "
-        ],  "P": [  "████ ",
-                    "█   █",
-                    "████ ",
-                    "█    ",
-                    "█    "
-                ],  "E": [  "████",
-                            "█   ",
-                            "███ ",
-                            "█   ",
-                            "████"
-                        ],  "N": [  "█   █",
-                                    "██  █",
-                                    "█ █ █",
-                                    "█  ██",
-                                    "█   █"
-                                ],  "G": [  " ███ ",
-                                            "█    ",
-                                            "█  ██",
-                                            "█   █",
-                                            " ███ "
-                                        ],  "R": [  "████ ",
-                                                    "█   █",
-                                                    "████ ",
-                                                    "█  █ ",
-                                                    "█   █"
-                                                ],  "A": [  " ███ ",
-                                                            "█   █",
-                                                            "█████",
-                                                            "█   █",
-                                                            "█   █"
-                                                        ],  "H": [  "█   █",
-                                                                    "█   █",
-                                                                    "█████",
-                                                                    "█   █",
-                                                                    "█   █"
-                                                                ]
-};
-
-function printBanner(text) {
-    let output = ["", "", "", "", ""];
-    const colors = [
-        "\x1b[38;5;51m",   // Cyan
-        "\x1b[38;5;45m",   // Light Blue
-        "\x1b[38;5;39m",   // Blue
-        "\x1b[38;5;33m",   // Darker Blue
-        "\x1b[38;5;27m"    // Deep Blue
-    ];
-    const reset = "\x1b[0m";
-
-    for (let char of text) {
-        if (letters[char]) {
-            letters[char].forEach((line, i) => {
-                output[i] += colors[i] + line + reset + "   ";
-            });
-        } else if (char === " ") {
-            output.forEach((_, i) => {
-                output[i] += "  ";
-            });
-        }
-    }
-
-    console.log("\n" + output.join("\n") + "\n\n");
-}
-
 async function displayLog() {
     console.log(`
 \x1b[38;5;51m╔════════════════════════════════════════════════════════════╗
@@ -132,7 +61,6 @@ console.log(`
 }
 
 // Execute banner display immediately
-printBanner("O P E N G R A P H");
 displayLog();
 await sleep(1000); // Sleep for 1 second
 
