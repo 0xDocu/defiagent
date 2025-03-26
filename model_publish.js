@@ -119,7 +119,9 @@ function floatToFixed(x, scale) {
 function convertWeightsToFixed(modelTopology, weightDataMap, scale = 2) {
     console.log('\n=== Converting Weights to Fixed-Point (scale=', scale, ') ===');
     
-    const layers = modelTopology.model_config.config.layers;
+    // TFJS 호환성 문제로 수정
+    // const layers = modelTopology.model_config.config.layers;
+    const layers = modelTopology.config.layers;
     const convertedWeights = [];
 
     for (const layer of layers) {

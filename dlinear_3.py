@@ -181,9 +181,6 @@ def main():
     train_ds = tf.data.Dataset.from_tensor_slices((X2_train_norm, Y_train)).batch(32).prefetch(1)
     val_ds   = tf.data.Dataset.from_tensor_slices((X2_val_norm,   Y_val)).batch(32).prefetch(1)
 
-    print("== Summary of Simple Model ==")
-    model.summary()
-    
     # model fitting
     callbacks = [
         tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
@@ -198,6 +195,9 @@ def main():
     loss, mae = model.evaluate(test_ds, verbose=0)
     print(f"[Test] MSE={loss:.4f}, MAE={mae:.4f}")
     
+    print("== Summary of Simple Model ==")
+    model.summary()
+
     # predicting
     print("Generating predictions...")
     y_pred = model.predict(test_ds)

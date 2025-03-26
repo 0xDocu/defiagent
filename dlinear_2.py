@@ -8,8 +8,9 @@
 
 import pandas as pd
 import numpy as np
-from tensorflow import keras
+# from tensorflow import keras
 import tensorflow as tf
+import tensorflowjs as tfjs
 import matplotlib.pyplot as plt
 import sys
 
@@ -41,29 +42,33 @@ def create_window_multistep(df, price_col, apy_col, window_size, horizon):
 
 def build_dlinear_multistep(window_size, horizon):
 
-    inputs = keras.Input(shape=(window_size,))
+    inputs = tf.keras.Input(shape=(window_size,), name='input_layer')
     
-    x = keras.layers.Reshape((window_size, 1))(inputs)
+    x = tf.keras.layers.Reshape((window_size, 1), name='reshape_layer')(inputs)
     
     # 추세
-    trend_seq = keras.layers.AveragePooling1D(pool_size=5, strides=1, padding='same')(x)
+    trend_seq = tf.keras.layers.AveragePooling1D(pool_size=5, strides=1, padding='same', name='trend_layer')(x)
 
     # 잔차 / lambda layer로 구현 (모델 복원 문제)
-    resid_seq = keras.layers.Lambda(
-        lambda t: t[0] - t[1]
-    )([x, trend_seq])
+    # resid_seq = tf.keras.layers.subtract([x, trend_seq])
+
+    # resid_seq = x - trend_seq
+    # 1) trend_seq에 -1을 곱해줌
+    neg_trend_seq = tf.keras.layers.Multiply()([trend_seq, tf.constant(-1.0, shape=(1,))])
+    # 2) x와 neg_trend_seq를 Add
+    resid_seq = tf.keras.layers.Add()([x, neg_trend_seq])
     
     # flatten
-    trend_flat = keras.layers.Flatten()(trend_seq)   # (batch, window_size)
-    resid_flat = keras.layers.Flatten()(resid_seq)   # (batch, window_size)
+    trend_flat = tf.keras.layers.Flatten()(trend_seq)   # (batch, window_size)
+    resid_flat = tf.keras.layers.Flatten()(resid_seq)   # (batch, window_size)
     
     # Dense
-    trend_pred = keras.layers.Dense(horizon)(trend_flat)
-    resid_pred = keras.layers.Dense(horizon)(resid_flat)
+    trend_pred = tf.keras.layers.Dense(horizon)(trend_flat)
+    resid_pred = tf.keras.layers.Dense(horizon)(resid_flat)
     
-    y_pred = keras.layers.Add()([trend_pred, resid_pred])
+    y_pred = tf.keras.layers.Add()([trend_pred, resid_pred])
     
-    model = keras.Model(inputs, y_pred)
+    model = tf.keras.Model(inputs, y_pred)
     return model
 
 def main():
@@ -92,7 +97,6 @@ def main():
     _std = train_flat.std(axis=0)
 
     def apply_normalize(x2d, _mean, _std):
-        # x2d.shape = (batch, window_size)
         x2d_norm = (x2d - _mean) / _std
         return x2d_norm
 
@@ -129,11 +133,21 @@ def main():
     ]
     print("Starting model training...")
     history = model.fit(train_ds, epochs=200, validation_data=val_ds, callbacks=callbacks, verbose=1)
+
+    # Save the model as .h5
+    print(f"\nSaving model to...")
+    # .h5, TFJS 모두 저장 진행
+    model.save("model/dlinear_2_model.h5", save_format="h5")
+    tfjs.converters.save_keras_model(model, "TFJS_model")    
+    print("Model saved successfully.")
     
     # evaluating
     print("Evaluating on test set...")
     loss, mae_scaled = model.evaluate(test_ds)
     print(f"[Test] MSE={loss:.4f}, MAE={mae_scaled:.4f}")
+
+    print("== Summary of Simple Model ==")
+    model.summary()
     
     # predicting
     print("Generating predictions...")
@@ -166,18 +180,14 @@ def main():
     plt.tight_layout()
     plt.show(block=False)  # 그래프 창을 표시하되 block=False로 설정
 
-    # Save the model as .h5
-    print(f"\nSaving model to...")
-    model.save("model/dlinear_2_model.keras")
-    print("Model saved successfully tf.")
-    model.save("model/dlinear_2_model.h5")
-    print("Model saved successfully .h5")
+    print("Close the figure window or press Enter in the console to exit.")
+    input("Press Enter to exit...\n") 
 
 
     print("Close the figure window or press Enter in the console to exit.")
     input("Press Enter to exit...\n") 
 
-# python -c "import tensorflow as tf; model = tf.keras.models.load_model('model/dlinear_2_model.h5'); model.summary()" 
+# tensorflowjs_converter --input_format=keras model/dlinear_2_model.h5 web2_models
 
 if __name__ == '__main__':
     main()

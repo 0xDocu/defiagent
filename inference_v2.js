@@ -277,7 +277,8 @@ console.log(`
 						target: `${TENSROFLOW_SUI_PACKAGE_ID}::graph::split_chunk_finalize`,
 						arguments: [
 							final_tx.object(PartialDenses),
-							final_tx.pure.string('dense'),
+							//final_tx.pure.string('dense'),
+							final_tx.pure.vector('u8', [100, 101, 110, 115, 101]),
 						],
 					})
 
@@ -288,7 +289,8 @@ console.log(`
 							res_act1[0],
 							res_act1[1],
 							res_act1[2],
-							final_tx.pure.string('dense_1'),
+							//final_tx.pure.string('dense_1'),
+							final_tx.pure.vector('u8', [100, 101, 110, 115, 101, 95, 49]),
 						],
 					})
 
@@ -299,7 +301,8 @@ console.log(`
 							res_act2[0],
 							res_act2[1],
 							res_act2[2],
-							final_tx.pure.string('dense_2'),
+							//final_tx.pure.string('dense_2'),
+							final_tx.pure.vector('u8', [100, 101, 110, 115, 101, 95, 50]),
 						],
 					})
 
@@ -446,79 +449,6 @@ console.log(`
 		}
 	}
   }
-
-// start program
-const letters = {
-    "O":[  " ███ ",
-           "█   █",
-           "█   █",
-           "█   █",
-           " ███ "
-        ],  "P": [  "████ ",
-                    "█   █",
-                    "████ ",
-                    "█    ",
-                    "█    "
-                ],  "E": [  "████",
-                            "█   ",
-                            "███ ",
-                            "█   ",
-                            "████"
-                        ],  "N": [  "█   █",
-                                    "██  █",
-                                    "█ █ █",
-                                    "█  ██",
-                                    "█   █"
-                                ],  "G": [  " ███ ",
-                                            "█    ",
-                                            "█  ██",
-                                            "█   █",
-                                            " ███ "
-                                        ],  "R": [  "████ ",
-                                                    "█   █",
-                                                    "████ ",
-                                                    "█  █ ",
-                                                    "█   █"
-                                                ],  "A": [  " ███ ",
-                                                            "█   █",
-                                                            "█████",
-                                                            "█   █",
-                                                            "█   █"
-                                                        ],  "H": [  "█   █",
-                                                                    "█   █",
-                                                                    "█████",
-                                                                    "█   █",
-                                                                    "█   █"
-                                                                ]
-};
-
-function printBanner(text) {
-    let output = ["", "", "", "", ""];
-    const colors = [
-        "\x1b[38;5;51m",   // Cyan
-        "\x1b[38;5;45m",   // Light Blue
-        "\x1b[38;5;39m",   // Blue
-        "\x1b[38;5;33m",   // Darker Blue
-        "\x1b[38;5;27m"    // Deep Blue
-    ];
-    const reset = "\x1b[0m";
-
-    for (let char of text) {
-        if (letters[char]) {
-            letters[char].forEach((line, i) => {
-                output[i] += colors[i] + line + reset + "   ";
-            });
-        } else if (char === " ") {
-            output.forEach((_, i) => {
-                output[i] += "  ";
-            });
-        }
-    }
-
-    console.log("\n" + output.join("\n") + "\n\n");
-}
-
-printBanner("O P E N G R A P H");
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
