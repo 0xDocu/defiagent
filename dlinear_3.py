@@ -18,11 +18,13 @@ import pandas as pd
 import numpy as np
 from tensorflow import keras
 import tensorflow as tf
+import tensorflowjs as tfjs
 import matplotlib.pyplot as plt
 
 DATA_CSV = 'data/dataset/data_1st.csv'
 WINDOW_SIZE = 30
 HORIZON = 1
+N_LAYER = 3
 
 # 전처리 함수, 5일 이평선과 (종가-5일 이평)의 잔차 계산
 def offchain_preprocess(prices_1d):
@@ -45,12 +47,29 @@ def offchain_preprocess(prices_1d):
 # 전처리 후 (trend, resid) 합쳐서 모델에 입력으로 전송
 def build_light_mlp(input_dim):
     # input_dim = 2 * window_size if we flatten (trend, resid) together (or just window_size if we do something else)
-    inputs = keras.Input(shape=(input_dim,))
-    # Dense 1 (ReLU)
-    hidden = keras.layers.Dense(32, activation='relu')(inputs)
-    # Dense 2 (출력)
-    outputs = keras.layers.Dense(1)(hidden)
-    model = keras.Model(inputs, outputs)
+    inputs = keras.Input(shape=(input_dim,), name='input_layer')
+    
+    x = keras.layers.Dense(32, activation='relu', name='dense')(inputs)
+
+    x = keras.layers.Dense(16, activation='relu', name='dense_1')(x)
+    
+    outputs = keras.layers.Dense(1, name='dense_2')(x)
+
+    model = keras.Model(inputs, outputs, name='3layer_mlp')
+    return model
+
+def build_2layer_mlp(input_dim):
+    """
+    - Layer1 ("dense"): 32 units (ReLU)
+    - Layer2 ("dense_1"): 1 unit (Linear output)
+    """
+    inputs = keras.Input(shape=(input_dim,), name='input_layer')
+    
+    x = keras.layers.Dense(32, activation='relu', name='dense')(inputs)
+    # 최종 출력 계층 (1차원): name='dense_1'
+    outputs = keras.layers.Dense(1, name='dense_1')(x)
+    
+    model = keras.Model(inputs, outputs, name='2layer_mlp')
     return model
 
 def create_window_multistep(df, price_col, apy_col, window_size, horizon):
@@ -76,6 +95,38 @@ def create_window_multistep(df, price_col, apy_col, window_size, horizon):
     date_label = np.array(date_label)
     
     return X, Y, date_label
+
+def convert_model_to_tfjs(input_path, output_path, n_layer):
+    try:
+        # 모델 구조 재생성 (필요한 경우 수정)
+        if n_layer == 3:
+            model = tf.keras.Sequential([
+                tf.keras.layers.Input(shape=(60,)),  # 입력 shape 확인 필요
+                tf.keras.layers.Dense(32, activation='relu', name='dense'),
+                tf.keras.layers.Dense(16, activation='relu', name='dense_1'),
+                tf.keras.layers.Dense(1, name='dense_2')
+            ])
+        elif n_layer == 2:
+            model = tf.keras.Sequential([
+                tf.keras.layers.Input(shape=(60,)),  # 입력 shape 확인 필요
+                tf.keras.layers.Dense(32, activation='relu', name='dense'),
+                tf.keras.layers.Dense(1, name='dense_1')
+            ])
+        
+        # 저장된 가중치 로드
+        model.load_weights(input_path)
+        
+        # TFJS로 변환
+        tfjs.converters.save_keras_model(
+            model, 
+            output_path
+        )
+        
+        print(f"Model successfully converted to TFJS and saved at {output_path}")
+    
+    except Exception as e:
+        print(f"Conversion error: {e}")
+
 
 def main():
     df = pd.read_csv(DATA_CSV)
@@ -122,7 +173,11 @@ def main():
     X2_test_norm  = normalize(X2_test,  _mean, _std)
     
     # building model
-    model = build_light_mlp(WINDOW_SIZE*2)
+    if N_LAYER == 3:
+        model = build_light_mlp(WINDOW_SIZE*2)
+    elif N_LAYER == 2:
+        model = build_2layer_mlp(WINDOW_SIZE*2)
+
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=1e-4),
         loss = tf.keras.losses.MeanSquaredError(), 
@@ -180,10 +235,10 @@ def main():
 
     # Save the model as .h5
     print(f"\nSaving model...")
-    model.save("model/dlinear_3_model.keras")
-    print("Model saved successfully tf.")
+    # .h5, TFJS 모두 저장 진행
     model.save("model/dlinear_3_model.h5")
-    print("Model saved successfully .h5")
+    convert_model_to_tfjs("model/dlinear_3_model.h5", "web2_models", N_LAYER)
+    print("Model saved successfully.")
 
     print("Close the figure window or press Enter in the console to exit.")
     input("Press Enter to exit...\n") 

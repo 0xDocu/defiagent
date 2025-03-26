@@ -17,14 +17,12 @@ const H5_MODEL_NAME= process.env.H5_MODEL_NAME;
 const RPC_URL      = process.env.RPC_URL;
 const GAS_BUDGET   = parseInt(process.env.GAS_BUDGET, 10);
 
-console.log("ENV loaded => ");
-console.log("NETWORK=", NETWORK);
-console.log("SCALE=", SCALE);
-console.log("MODEL_PATH=", MODEL_PATH);
-console.log("PRIVATE_KEY length=", PRIVATE_KEY.length);
-console.log("H5_MODEL_NAME=", H5_MODEL_NAME);
-console.log("RPC_URL=", RPC_URL);
-console.log("GAS_BUDGET=", GAS_BUDGET);
+if (!PRIVATE_KEY) {
+	console.error("=============================================");
+	console.error("Please provide a PRIVATE_KEY in .env file");
+	console.error("=============================================");
+    process.exit(1); 
+}
 
 // Define sleep function first
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
@@ -436,44 +434,12 @@ async function main() {
         if (!packageId) {
             throw new Error("Failed to extract package ID from deployment result");
         }
-        await storeTrainData(packageId, result.digest);
     } catch (error) {
         console.error("Error:", error);
         process.exit(1);
     }
 }
 
-async function storeTrainData(packageId, digest) {
-	try {
-        
-        const jsonTrainData = fs.readFileSync('./web2_datasets/resample_convert_train.json', 'utf8');
-        const jsonTestData = fs.readFileSync('./web2_datasets/resample_convert_test.json', 'utf8');
-        
-        // Parse JSON string to JavaScript object
-        const trainData = JSON.parse(jsonTrainData);
-        const testData = JSON.parse(jsonTestData);
-        
-        // Log the data structure
-        console.log('MNIST data loaded successfully');
 
-		// 서버로 요청 보내기
-		const response = await fetch('http://localhost:8083/train-set', {
-			method: 'POST', 
-			headers: { 'Content-Type': 'application/json' }, 
-			body: JSON.stringify( { train: trainData, test: testData, packageId: packageId, digest: digest })
-		});
-
-		const data = await response.json();
-        const blobId = data['blobId'];
-
-    
-		console.log("Training Set Walrus Store Success", data);
-        console.log('https://walruscan.com/testnet/blob/' + blobId);
-		return data;
-	} catch (error) {
-		console.error('API Call Err:', error);
-		return "";
-	}
-}
 
 main();
