@@ -23,7 +23,7 @@ def sui_privkey_to_hex(privkey_bech32: str) -> str:
     return f"0x{hex_key}"
 
 if __name__ == "__main__":
-    sui_privkey_str = "suiprivkey1qznjjaqqxkajnhrk6l7cgsaj3t628sj9kg46uwsjqvy70t69n9n7uzthh0y"
+    sui_privkey_str = "suiprivkey1...yourkey"
     hex_privkey = sui_privkey_to_hex(sui_privkey_str)
 
     print("원본  Bech32 privkey:", sui_privkey_str)

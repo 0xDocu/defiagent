@@ -254,7 +254,7 @@ console.log(`
 
 			console.log('\nInference start... \n');
 
-			let totalTasks = 2
+			let totalTasks = 5
 			let spinner;
 			
 			for (let i = 0; i<totalTasks; i++) {
